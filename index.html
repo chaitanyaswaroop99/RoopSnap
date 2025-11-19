@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Tangerine:wght@400;700&family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <!-- Navigation -->
@@ -16,6 +16,7 @@
             <div class="logo">RoopSnap</div>
             <ul class="nav-menu">
                 <li><a href="#home">Home</a></li>
+                <li><a href="#portfolio">Portfolio</a></li>
                 <li><a href="#gallery">Gallery</a></li>
                 <li><a href="#instagram">Instagram</a></li>
                 <li><a href="#about">About</a></li>
@@ -47,6 +48,25 @@
                 <div class="about-text">
                     <p>Welcome to RoopSnap, where every moment is transformed into a timeless memory. Specializing in capturing the essence of life's most precious occasions, we bring artistry and passion to every photograph.</p>
                     <p>From intimate portraits to grand celebrations, we strive to tell your story through the lens of creativity and excellence.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Portfolio Section -->
+    <section id="portfolio" class="portfolio">
+        <div class="container">
+            <h2 class="section-title">Portfolio</h2>
+            <div class="portfolio-filters" id="portfolioFilters">
+                <button class="filter-btn active" data-category="all">All</button>
+                <!-- Filter buttons will be dynamically added here -->
+            </div>
+            <div class="portfolio-grid" id="portfolioGrid">
+                <!-- Portfolio items will be loaded here -->
+                <div class="portfolio-item placeholder">
+                    <div class="placeholder-content">
+                        <p>Loading portfolio...</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -85,8 +105,8 @@
             <div class="instagram-feed" id="instagramFeed">
                 <!-- Instagram posts will be embedded here -->
                 <div class="instagram-placeholder">
-                    <p>Connect your Instagram to display your latest posts here.</p>
-                    <p class="instagram-note">To display Instagram posts, you'll need to set up Instagram Basic Display API or use a service like Instagram Feed plugin.</p>
+                    <p>Follow us on Instagram to see our latest work and behind-the-scenes moments!</p>
+                    <p class="instagram-note">Visit our Instagram profile to explore our photography portfolio.</p>
                 </div>
             </div>
         </div>

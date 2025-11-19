@@ -33,11 +33,11 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
 window.addEventListener('scroll', () => {
     const navbar = document.querySelector('.navbar');
     if (window.scrollY > 50) {
-        navbar.style.background = 'rgba(255, 255, 255, 0.98)';
-        navbar.style.boxShadow = '0 2px 20px rgba(0, 0, 0, 0.15)';
+        navbar.style.background = 'rgba(0, 0, 0, 0.95)';
+        navbar.style.boxShadow = '0 2px 30px rgba(0, 0, 0, 0.8)';
     } else {
-        navbar.style.background = 'rgba(255, 255, 255, 0.95)';
-        navbar.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
+        navbar.style.background = 'rgba(0, 0, 0, 0.85)';
+        navbar.style.boxShadow = '0 2px 20px rgba(0, 0, 0, 0.5)';
     }
 });
 
@@ -123,67 +123,141 @@ async function initGallery() {
 // Initialize gallery on page load
 initGallery();
 
-// Instagram Integration
-// Note: Instagram's API requires authentication. For production use, you'll need:
-// 1. Instagram Basic Display API access token
-// 2. Or use a third-party service like Instagram Feed plugin
+// Portfolio initialization with category filtering
+let allPortfolioPhotos = [];
+let currentCategory = 'all';
 
-// Function to embed Instagram posts using oEmbed API
-// This requires the post URL to work
-async function embedInstagramPost(postUrl) {
+async function initPortfolio() {
+    const portfolioGrid = document.getElementById('portfolioGrid');
+    const portfolioFilters = document.getElementById('portfolioFilters');
+    
+    // Show loading state
+    portfolioGrid.innerHTML = '<div class="portfolio-item placeholder"><div class="placeholder-content"><p>Loading portfolio...</p></div></div>';
+    
     try {
-        // Instagram oEmbed endpoint (requires CORS proxy or backend for production)
-        const oembedUrl = `https://api.instagram.com/oembed?url=${encodeURIComponent(postUrl)}`;
+        const response = await fetch(`${API_BASE_URL}/api/photos`);
+        if (!response.ok) throw new Error('Failed to fetch photos');
         
-        // Note: This will fail due to CORS in browser. You'll need a backend proxy or use a service.
-        // For now, this is a placeholder showing the structure
+        allPortfolioPhotos = await response.json();
         
-        const response = await fetch(oembedUrl);
-        if (!response.ok) throw new Error('Failed to fetch');
+        // Extract unique categories
+        const categories = ['all'];
+        allPortfolioPhotos.forEach(photo => {
+            if (photo.category && !categories.includes(photo.category)) {
+                categories.push(photo.category);
+            }
+        });
         
-        const data = await response.json();
-        return data.html;
+        // Create filter buttons (skip "all" as it's already there)
+        categories.slice(1).forEach(category => {
+            const filterBtn = document.createElement('button');
+            filterBtn.className = 'filter-btn';
+            filterBtn.textContent = category;
+            filterBtn.setAttribute('data-category', category);
+            filterBtn.addEventListener('click', () => filterPortfolio(category));
+            portfolioFilters.appendChild(filterBtn);
+        });
+        
+        // Display portfolio
+        displayPortfolio();
     } catch (error) {
-        console.error('Error embedding Instagram post:', error);
-        return null;
+        console.error('Error loading portfolio:', error);
+        portfolioGrid.innerHTML = '<div class="portfolio-item placeholder"><div class="placeholder-content"><p>Error loading portfolio. Please try again later.</p></div></div>';
     }
 }
 
-// Alternative: Display Instagram posts using iframe embeds
-// You can get embed code from Instagram by going to a post > ... > Embed
-function addInstagramEmbed(embedCode) {
-    const instagramFeed = document.getElementById('instagramFeed');
-    const embedContainer = document.createElement('div');
-    embedContainer.className = 'instagram-embed-container';
-    embedContainer.innerHTML = embedCode;
-    instagramFeed.appendChild(embedContainer);
+function filterPortfolio(category) {
+    currentCategory = category;
+    
+    // Update active filter button
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-category') === category) {
+            btn.classList.add('active');
+        }
+    });
+    
+    displayPortfolio();
 }
 
-// Function to load Instagram posts from Basic Display API
-// This requires an access token from Instagram
-async function loadInstagramPosts(accessToken) {
-    try {
-        // Instagram Basic Display API endpoint
-        const apiUrl = `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url&access_token=${accessToken}`;
+function displayPortfolio() {
+    const portfolioGrid = document.getElementById('portfolioGrid');
+    portfolioGrid.innerHTML = '';
+    
+    // Filter photos by category
+    const filteredPhotos = currentCategory === 'all' 
+        ? allPortfolioPhotos 
+        : allPortfolioPhotos.filter(photo => photo.category === currentCategory);
+    
+    if (filteredPhotos.length === 0) {
+        portfolioGrid.innerHTML = '<div class="portfolio-item placeholder"><div class="placeholder-content"><p>No photos in this category yet.</p></div></div>';
+        return;
+    }
+    
+    // Create portfolio items
+    filteredPhotos.forEach((photo) => {
+        const portfolioItem = document.createElement('div');
+        portfolioItem.className = 'portfolio-item';
         
-        const response = await fetch(apiUrl);
-        if (!response.ok) throw new Error('Failed to fetch Instagram posts');
+        portfolioItem.innerHTML = `
+            <img src="${API_BASE_URL}${photo.file_path}" alt="${photo.description || photo.original_name || 'Photo'}" loading="lazy">
+            <div class="portfolio-overlay">
+                ${photo.category ? `<span class="portfolio-category">${photo.category}</span>` : ''}
+                ${photo.description ? `<p class="portfolio-description">${photo.description}</p>` : ''}
+            </div>
+        `;
+        
+        portfolioItem.addEventListener('click', () => {
+            openLightbox(`${API_BASE_URL}${photo.file_path}`, photo.description || photo.original_name || '');
+        });
+        
+        portfolioGrid.appendChild(portfolioItem);
+    });
+}
+
+// Initialize portfolio on page load
+initPortfolio();
+
+// Instagram Integration - Load posts from backend API
+async function loadInstagramPosts() {
+    const instagramFeed = document.getElementById('instagramFeed');
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/instagram/posts?limit=6`);
+        
+        if (!response.ok) {
+            if (response.status === 503) {
+                // Access token not configured - show placeholder
+                return;
+            }
+            throw new Error('Failed to fetch Instagram posts');
+        }
         
         const data = await response.json();
         
-        const instagramFeed = document.getElementById('instagramFeed');
-        instagramFeed.innerHTML = ''; // Clear placeholder
+        if (!data.data || data.data.length === 0) {
+            // No posts available
+            return;
+        }
         
-        data.data.slice(0, 6).forEach(post => {
+        // Clear placeholder
+        instagramFeed.innerHTML = '';
+        
+        // Display posts
+        data.data.forEach(post => {
             const postElement = document.createElement('div');
             postElement.className = 'instagram-post';
             
-            const imageUrl = post.media_type === 'VIDEO' ? post.thumbnail_url : post.media_url;
+            const imageUrl = post.media_type === 'VIDEO' ? (post.thumbnail_url || post.media_url) : post.media_url;
+            const caption = post.caption ? post.caption.substring(0, 150) : '';
             
             postElement.innerHTML = `
-                <a href="${post.permalink}" target="_blank" rel="noopener noreferrer">
-                    <img src="${imageUrl}" alt="${post.caption || 'Instagram post'}" loading="lazy">
-                    ${post.caption ? `<p class="instagram-caption">${post.caption.substring(0, 100)}...</p>` : ''}
+                <a href="${post.permalink}" target="_blank" rel="noopener noreferrer" class="instagram-post-link">
+                    <div class="instagram-post-image">
+                        <img src="${imageUrl}" alt="${caption || 'Instagram post'}" loading="lazy">
+                        ${post.media_type === 'VIDEO' ? '<div class="instagram-video-badge"><svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg></div>' : ''}
+                    </div>
+                    ${caption ? `<p class="instagram-caption">${caption}${post.caption.length > 150 ? '...' : ''}</p>` : ''}
                 </a>
             `;
             
@@ -266,8 +340,13 @@ document.querySelectorAll('section').forEach(section => {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('RoopSnap website loaded');
     
-    // If you have an Instagram access token, uncomment and add it here:
-    // const INSTAGRAM_ACCESS_TOKEN = 'YOUR_ACCESS_TOKEN_HERE';
-    // loadInstagramPosts(INSTAGRAM_ACCESS_TOKEN);
+    // Set "All" filter button as active
+    const allFilterBtn = document.querySelector('.filter-btn[data-category="all"]');
+    if (allFilterBtn) {
+        allFilterBtn.addEventListener('click', () => filterPortfolio('all'));
+    }
+    
+    // Load Instagram posts
+    loadInstagramPosts();
 });
 

@@ -5,10 +5,18 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const bodyParser = require('body-parser');
+const https = require('https');
+
+// Load environment variables from .env file if dotenv is installed (for local development)
+try {
+    require('dotenv').config();
+} catch (e) {
+    // dotenv not installed, using system environment variables (production)
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'chaya-admin';
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'roopsnap';
 
 // Middleware
 app.use(cors());
@@ -287,6 +295,65 @@ app.get('/api/health', (req, res) => {
 // Admin key verification
 app.get('/api/admin/verify', authenticateAdmin, (req, res) => {
     res.json({ status: 'OK' });
+});
+
+// Instagram Feed API endpoint
+// This endpoint fetches Instagram posts using the access token stored in environment variable
+app.get('/api/instagram/posts', (req, res) => {
+    const INSTAGRAM_ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN;
+    
+    if (!INSTAGRAM_ACCESS_TOKEN) {
+        return res.status(503).json({ 
+            error: 'Instagram access token not configured',
+            message: 'Please set INSTAGRAM_ACCESS_TOKEN environment variable'
+        });
+    }
+
+    try {
+        // Fetch posts from Instagram Graph API
+        const limit = parseInt(req.query.limit) || 6;
+        const apiUrl = `https://graph.instagram.com/me/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp&limit=${limit}&access_token=${INSTAGRAM_ACCESS_TOKEN}`;
+        
+        https.get(apiUrl, (apiRes) => {
+            let data = '';
+            
+            apiRes.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            apiRes.on('end', () => {
+                try {
+                    const jsonData = JSON.parse(data);
+                    
+                    if (jsonData.error) {
+                        return res.status(500).json({ 
+                            error: 'Instagram API error',
+                            message: jsonData.error.message 
+                        });
+                    }
+                    
+                    res.json(jsonData);
+                } catch (parseError) {
+                    res.status(500).json({ 
+                        error: 'Failed to parse Instagram response',
+                        message: parseError.message 
+                    });
+                }
+            });
+        }).on('error', (error) => {
+            console.error('Error fetching Instagram posts:', error);
+            res.status(500).json({ 
+                error: 'Failed to fetch Instagram posts',
+                message: error.message 
+            });
+        });
+    } catch (error) {
+        console.error('Error in Instagram endpoint:', error);
+        res.status(500).json({ 
+            error: 'Failed to fetch Instagram posts',
+            message: error.message 
+        });
+    }
 });
 
 // Serve the main HTML file for all other routes (for SPA)
