@@ -25,6 +25,10 @@ database.sqlite
 *.sqlite
 *.db
 
+# PostgreSQL (local development - don't commit connection strings)
+.env
+.env.local
+
 # Uploads (user-generated content)
 uploads/
 !uploads/.gitkeep

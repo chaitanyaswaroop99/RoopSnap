@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const path = require('path');
 const fs = require('fs');
 const bodyParser = require('body-parser');
@@ -60,52 +60,52 @@ const upload = multer({
     }
 });
 
-// Initialize SQLite database
-const dbPath = path.join(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(dbPath, (err) => {
+// Initialize PostgreSQL database connection
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
+
+// Test connection and initialize database
+pool.connect((err, client, release) => {
     if (err) {
-        console.error('Error opening database:', err.message);
+        console.error('Error connecting to PostgreSQL:', err.message);
     } else {
-        console.log('Connected to SQLite database.');
+        console.log('Connected to PostgreSQL database.');
+        release();
         initializeDatabase();
     }
 });
 
 // Initialize database tables
-function initializeDatabase() {
-    // Photos table
-    db.run(`CREATE TABLE IF NOT EXISTS photos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        filename TEXT NOT NULL,
-        original_name TEXT,
-        file_path TEXT NOT NULL,
-        description TEXT,
-        category TEXT,
-        uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )`, (err) => {
-        if (err) {
-            console.error('Error creating photos table:', err.message);
-        } else {
-            console.log('Photos table ready.');
-        }
-    });
+async function initializeDatabase() {
+    try {
+        // Photos table
+        await pool.query(`CREATE TABLE IF NOT EXISTS photos (
+            id SERIAL PRIMARY KEY,
+            filename VARCHAR(255) NOT NULL,
+            original_name VARCHAR(255),
+            file_path VARCHAR(500) NOT NULL,
+            description TEXT,
+            category VARCHAR(100),
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )`);
+        console.log('Photos table ready.');
 
-    // Contacts table
-    db.run(`CREATE TABLE IF NOT EXISTS contacts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL,
-        message TEXT NOT NULL,
-        phone TEXT,
-        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        status TEXT DEFAULT 'new'
-    )`, (err) => {
-        if (err) {
-            console.error('Error creating contacts table:', err.message);
-        } else {
-            console.log('Contacts table ready.');
-        }
-    });
+        // Contacts table
+        await pool.query(`CREATE TABLE IF NOT EXISTS contacts (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            message TEXT NOT NULL,
+            phone VARCHAR(50),
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(50) DEFAULT 'new'
+        )`);
+        console.log('Contacts table ready.');
+    } catch (err) {
+        console.error('Error initializing database:', err.message);
+    }
 }
 
 // Admin authentication middleware
@@ -120,171 +120,162 @@ function authenticateAdmin(req, res, next) {
 // API Routes
 
 // Get all photos
-app.get('/api/photos', (req, res) => {
-    const query = req.query.category 
-        ? 'SELECT * FROM photos WHERE category = ? ORDER BY uploaded_at DESC'
-        : 'SELECT * FROM photos ORDER BY uploaded_at DESC';
-    
-    const params = req.query.category ? [req.query.category] : [];
-    
-    db.all(query, params, (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
+app.get('/api/photos', async (req, res) => {
+    try {
+        const query = req.query.category 
+            ? 'SELECT * FROM photos WHERE category = $1 ORDER BY uploaded_at DESC'
+            : 'SELECT * FROM photos ORDER BY uploaded_at DESC';
+        
+        const params = req.query.category ? [req.query.category] : [];
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get single photo
-app.get('/api/photos/:id', (req, res) => {
-    const id = req.params.id;
-    db.get('SELECT * FROM photos WHERE id = ?', [id], (err, row) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
+app.get('/api/photos/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const result = await pool.query('SELECT * FROM photos WHERE id = $1', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Photo not found' });
         }
-        if (!row) {
-            res.status(404).json({ error: 'Photo not found' });
-            return;
-        }
-        res.json(row);
-    });
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Upload photo
-app.post('/api/photos/upload', authenticateAdmin, upload.single('photo'), (req, res) => {
+app.post('/api/photos/upload', authenticateAdmin, upload.single('photo'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { description, category } = req.body;
-    const filename = req.file.filename;
-    const filePath = `/uploads/${filename}`;
-    const originalName = req.file.originalname;
+    try {
+        const { description, category } = req.body;
+        const filename = req.file.filename;
+        const filePath = `/uploads/${filename}`;
+        const originalName = req.file.originalname;
 
-    db.run(
-        'INSERT INTO photos (filename, original_name, file_path, description, category) VALUES (?, ?, ?, ?, ?)',
-        [filename, originalName, filePath, description || null, category || null],
-        function(err) {
-            if (err) {
-                // Delete uploaded file if database insert fails
-                fs.unlinkSync(req.file.path);
-                res.status(500).json({ error: err.message });
-                return;
-            }
-            res.json({
-                id: this.lastID,
-                filename: filename,
-                file_path: filePath,
-                description: description,
-                category: category,
-                message: 'Photo uploaded successfully'
-            });
+        const result = await pool.query(
+            'INSERT INTO photos (filename, original_name, file_path, description, category) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [filename, originalName, filePath, description || null, category || null]
+        );
+
+        res.json({
+            id: result.rows[0].id,
+            filename: filename,
+            file_path: filePath,
+            description: description,
+            category: category,
+            message: 'Photo uploaded successfully'
+        });
+    } catch (err) {
+        // Delete uploaded file if database insert fails
+        if (req.file && req.file.path) {
+            fs.unlinkSync(req.file.path);
         }
-    );
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Delete photo
-app.delete('/api/photos/:id', authenticateAdmin, (req, res) => {
-    const id = req.params.id;
-    
-    // First get the file path
-    db.get('SELECT file_path FROM photos WHERE id = ?', [id], (err, row) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
+app.delete('/api/photos/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        
+        // First get the file path
+        const result = await pool.query('SELECT file_path FROM photos WHERE id = $1', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Photo not found' });
         }
-        if (!row) {
-            res.status(404).json({ error: 'Photo not found' });
-            return;
-        }
+
+        const filePath = path.join(__dirname, result.rows[0].file_path);
 
         // Delete from database
-        db.run('DELETE FROM photos WHERE id = ?', [id], (err) => {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
-            }
+        await pool.query('DELETE FROM photos WHERE id = $1', [id]);
 
-            // Delete file from filesystem
-            const filePath = path.join(__dirname, row.file_path);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
+        // Delete file from filesystem
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
 
-            res.json({ message: 'Photo deleted successfully' });
-        });
-    });
+        res.json({ message: 'Photo deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Submit contact form
-app.post('/api/contact', (req, res) => {
+app.post('/api/contact', async (req, res) => {
     const { name, email, message, phone } = req.body;
 
     if (!name || !email || !message) {
         return res.status(400).json({ error: 'Name, email, and message are required' });
     }
 
-    db.run(
-        'INSERT INTO contacts (name, email, message, phone) VALUES (?, ?, ?, ?)',
-        [name, email, message, phone || null],
-        function(err) {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
-            }
-            res.json({
-                id: this.lastID,
-                message: 'Contact form submitted successfully'
-            });
-        }
-    );
+    try {
+        const result = await pool.query(
+            'INSERT INTO contacts (name, email, message, phone) VALUES ($1, $2, $3, $4) RETURNING id',
+            [name, email, message, phone || null]
+        );
+
+        res.json({
+            id: result.rows[0].id,
+            message: 'Contact form submitted successfully'
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get all contacts (admin endpoint)
-app.get('/api/contacts', authenticateAdmin, (req, res) => {
-    db.all('SELECT * FROM contacts ORDER BY submitted_at DESC', [], (err, rows) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-        }
-        res.json(rows);
-    });
+app.get('/api/contacts', authenticateAdmin, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM contacts ORDER BY submitted_at DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Get single contact
-app.get('/api/contacts/:id', authenticateAdmin, (req, res) => {
-    const id = req.params.id;
-    db.get('SELECT * FROM contacts WHERE id = ?', [id], (err, row) => {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
+app.get('/api/contacts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const result = await pool.query('SELECT * FROM contacts WHERE id = $1', [id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Contact not found' });
         }
-        if (!row) {
-            res.status(404).json({ error: 'Contact not found' });
-            return;
-        }
-        res.json(row);
-    });
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Update contact status (mark as read, etc.)
-app.patch('/api/contacts/:id', authenticateAdmin, (req, res) => {
-    const id = req.params.id;
-    const { status } = req.body;
+app.patch('/api/contacts/:id', authenticateAdmin, async (req, res) => {
+    try {
+        const id = req.params.id;
+        const { status } = req.body;
 
-    db.run(
-        'UPDATE contacts SET status = ? WHERE id = ?',
-        [status || 'read', id],
-        function(err) {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
-            }
-            res.json({ message: 'Contact status updated successfully' });
-        }
-    );
+        await pool.query(
+            'UPDATE contacts SET status = $1 WHERE id = $2',
+            [status || 'read', id]
+        );
+
+        res.json({ message: 'Contact status updated successfully' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Health check
@@ -378,13 +369,14 @@ app.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-    db.close((err) => {
-        if (err) {
-            console.error(err.message);
-        }
+process.on('SIGINT', async () => {
+    try {
+        await pool.end();
         console.log('Database connection closed.');
         process.exit(0);
-    });
+    } catch (err) {
+        console.error('Error closing database connection:', err.message);
+        process.exit(1);
+    }
 });
 
