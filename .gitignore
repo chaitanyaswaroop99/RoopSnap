@@ -1,0 +1,40 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Node modules
+node_modules/
+
+# Database
+database.sqlite
+*.sqlite
+*.db
+
+# Uploads (user-generated content)
+uploads/
+!uploads/.gitkeep
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Build files
+dist/
+build/
+

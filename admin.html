@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - RoopSnap</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .admin-container {
+            max-width: 1200px;
+            margin: 100px auto 50px;
+            padding: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+        .admin-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        .admin-section {
+            background: var(--white);
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        .file-input-label {
+            display: block;
+            padding: 40px;
+            border: 2px dashed var(--accent-color);
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: var(--secondary-color);
+        }
+        .file-input-label:hover {
+            background: rgba(212, 175, 55, 0.1);
+        }
+        .file-preview {
+            margin-top: 1rem;
+            max-width: 300px;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .file-preview img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .contacts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .contact-item {
+            padding: 1.5rem;
+            background: var(--secondary-color);
+            border-radius: 8px;
+            border-left: 4px solid var(--accent-color);
+        }
+        .contact-item h3 {
+            margin-bottom: 0.5rem;
+            color: var(--primary-color);
+        }
+        .contact-item p {
+            margin: 0.5rem 0;
+            color: var(--text-light);
+        }
+        .contact-meta {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-left: 1rem;
+        }
+        .status-new {
+            background: #4CAF50;
+            color: white;
+        }
+        .status-read {
+            background: #9E9E9E;
+            color: white;
+        }
+        .photos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .photo-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .photo-item img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        .photo-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .btn-delete {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .btn-delete:hover {
+            background: #d32f2f;
+        }
+        .back-link {
+            display: inline-block;
+            margin-bottom: 2rem;
+            color: var(--primary-color);
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .back-link:hover {
+            color: var(--accent-color);
+        }
+        .admin-auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+        .admin-auth-modal {
+            background: var(--white);
+            padding: 2rem;
+            border-radius: 12px;
+            max-width: 400px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+        .admin-auth-modal h2 {
+            margin-bottom: 1rem;
+        }
+        .admin-auth-modal p {
+            margin-bottom: 1.5rem;
+            color: var(--text-light);
+        }
+        .admin-auth-modal input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            border: 2px solid var(--secondary-color);
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+        .admin-auth-modal button {
+            width: 100%;
+            padding: 0.8rem 1rem;
+            border: none;
+            border-radius: 8px;
+            background: var(--primary-color);
+            color: var(--white);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .admin-auth-modal button:hover {
+            background: var(--accent-color);
+        }
+        .admin-auth-error {
+            color: #e53935;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            min-height: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-auth-overlay" id="adminAuthOverlay">
+        <div class="admin-auth-modal">
+            <h2>Admin Access</h2>
+            <p>Enter your admin access key to continue.</p>
+            <form id="adminAuthForm">
+                <input type="password" id="adminKeyInput" placeholder="Access Key" required>
+                <button type="submit">Unlock</button>
+                <p class="admin-auth-error" id="adminAuthError"></p>
+            </form>
+        </div>
+    </div>
+    <div class="admin-container hidden" id="adminContent">
+        <a href="index.html" class="back-link">← Back to Website</a>
+        
+        <div class="admin-header">
+            <h1 class="section-title">Admin Panel</h1>
+            <p>Manage your photos and view client inquiries</p>
+        </div>
+
+        <!-- Photo Upload Section -->
+        <div class="admin-section">
+            <h2>Upload New Photo</h2>
+            <form class="upload-form" id="uploadForm">
+                <div class="file-input-wrapper">
+                    <input type="file" id="photoInput" name="photo" accept="image/*" required>
+                    <label for="photoInput" class="file-input-label">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin: 0 auto 1rem; display: block;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <strong>Click to select a photo</strong><br>
+                        <span style="color: var(--text-light);">PNG, JPG, GIF up to 10MB</span>
+                    </label>
+                </div>
+                <div id="filePreview" class="file-preview" style="display: none;">
+                    <img id="previewImg" src="" alt="Preview">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="photoDescription" placeholder="Photo Description (optional)">
+                </div>
+                <div class="form-group">
+                    <input type="text" id="photoCategory" placeholder="Category (optional, e.g., Portrait, Wedding, Event)">
+                </div>
+                <button type="submit" class="submit-button">Upload Photo</button>
+            </form>
+        </div>
+
+        <!-- Photos Management Section -->
+        <div class="admin-section">
+            <h2>Manage Photos</h2>
+            <div id="photosList" class="photos-grid">
+                <p>Loading photos...</p>
+            </div>
+        </div>
+
+        <!-- Contacts Section -->
+        <div class="admin-section">
+            <h2>Client Inquiries</h2>
+            <div id="contactsList" class="contacts-list">
+                <p>Loading contacts...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = window.location.origin;
+        let adminKey = '';
+
+        const adminAuthOverlay = document.getElementById('adminAuthOverlay');
+        const adminAuthForm = document.getElementById('adminAuthForm');
+        const adminAuthError = document.getElementById('adminAuthError');
+        const adminKeyInput = document.getElementById('adminKeyInput');
+        const adminContent = document.getElementById('adminContent');
+
+        function showAuthOverlay(message = '') {
+            adminAuthOverlay.style.display = 'flex';
+            adminContent.classList.add('hidden');
+            adminAuthError.textContent = message;
+            adminKeyInput.focus();
+        }
+
+        function hideAuthOverlay() {
+            adminAuthOverlay.style.display = 'none';
+            adminContent.classList.remove('hidden');
+            adminAuthError.textContent = '';
+        }
+
+        function handleUnauthorizedResponse(response) {
+            if (response.status === 401) {
+                adminKey = '';
+                showAuthOverlay('Session expired. Please enter your admin key again.');
+                throw new Error('Unauthorized');
+            }
+        }
+
+        async function verifyAdminKey() {
+            if (!adminKey) {
+                showAuthOverlay('Enter your admin key to continue.');
+                return false;
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/admin/verify`, {
+                    headers: {
+                        'x-admin-key': adminKey
+                    }
+                });
+                if (!response.ok) {
+                    throw new Error('Invalid admin key');
+                }
+                hideAuthOverlay();
+                loadPhotos();
+                loadContacts();
+                return true;
+            } catch (error) {
+                adminKey = '';
+                showAuthOverlay('Invalid admin key. Please try again.');
+                return false;
+            }
+        }
+
+        adminAuthForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            adminKey = adminKeyInput.value.trim();
+            await verifyAdminKey();
+            adminAuthForm.reset();
+        });
+
+        // File preview
+        document.getElementById('photoInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('previewImg').src = e.target.result;
+                    document.getElementById('filePreview').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Upload form
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            const fileInput = document.getElementById('photoInput');
+            const description = document.getElementById('photoDescription').value;
+            const category = document.getElementById('photoCategory').value;
+
+            if (!fileInput.files[0]) {
+                alert('Please select a photo to upload');
+                return;
+            }
+
+            formData.append('photo', fileInput.files[0]);
+            if (description) formData.append('description', description);
+            if (category) formData.append('category', category);
+
+            const submitButton = this.querySelector('.submit-button');
+            const originalText = submitButton.textContent;
+            submitButton.disabled = true;
+            submitButton.textContent = 'Uploading...';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/photos/upload`, {
+                    method: 'POST',
+                    headers: {
+                        'x-admin-key': adminKey
+                    },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert('Photo uploaded successfully!');
+                    document.getElementById('uploadForm').reset();
+                    document.getElementById('filePreview').style.display = 'none';
+                    loadPhotos();
+                } else {
+                    handleUnauthorizedResponse(response);
+                    const error = await response.json();
+                    throw new Error(error.error || 'Upload failed');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('Error uploading photo: ' + error.message);
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = originalText;
+            }
+        });
+
+        // Load photos
+        async function loadPhotos() {
+            const photosList = document.getElementById('photosList');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/photos`);
+                if (!response.ok) throw new Error('Failed to fetch photos');
+                
+                const photos = await response.json();
+                
+                if (photos.length === 0) {
+                    photosList.innerHTML = '<p>No photos uploaded yet.</p>';
+                    return;
+                }
+
+                photosList.innerHTML = photos.map(photo => `
+                    <div class="photo-item">
+                        <img src="${API_BASE_URL}${photo.file_path}" alt="${photo.description || 'Photo'}">
+                        <div class="photo-actions">
+                            <button class="btn-delete" onclick="deletePhoto(${photo.id})">Delete</button>
+                        </div>
+                        ${photo.description ? `<p style="padding: 0.5rem; font-size: 0.85rem; color: var(--text-light);">${photo.description}</p>` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading photos:', error);
+                photosList.innerHTML = '<p>Error loading photos.</p>';
+            }
+        }
+
+        // Delete photo
+        async function deletePhoto(id) {
+            if (!confirm('Are you sure you want to delete this photo?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/photos/${id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'x-admin-key': adminKey
+                    }
+                });
+
+                if (response.ok) {
+                    alert('Photo deleted successfully!');
+                    loadPhotos();
+                } else {
+                    handleUnauthorizedResponse(response);
+                    throw new Error('Failed to delete photo');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Error deleting photo: ' + error.message);
+            }
+        }
+
+        // Load contacts
+        async function loadContacts() {
+            const contactsList = document.getElementById('contactsList');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts`, {
+                    headers: {
+                        'x-admin-key': adminKey
+                    }
+                });
+                handleUnauthorizedResponse(response);
+                if (!response.ok) throw new Error('Failed to fetch contacts');
+                
+                const contacts = await response.json();
+                
+                if (contacts.length === 0) {
+                    contactsList.innerHTML = '<p>No contact inquiries yet.</p>';
+                    return;
+                }
+
+                contactsList.innerHTML = contacts.map(contact => `
+                    <div class="contact-item">
+                        <h3>
+                            ${contact.name}
+                            <span class="status-badge status-${contact.status}">${contact.status}</span>
+                        </h3>
+                        <p><strong>Email:</strong> ${contact.email}</p>
+                        ${contact.phone ? `<p><strong>Phone:</strong> ${contact.phone}</p>` : ''}
+                        <p><strong>Message:</strong> ${contact.message}</p>
+                        <div class="contact-meta">
+                            Received: ${new Date(contact.submitted_at).toLocaleString()}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading contacts:', error);
+                contactsList.innerHTML = '<p>Error loading contacts.</p>';
+            }
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', () => {
+            showAuthOverlay();
+        });
+    </script>
+</body>
+</html>
+

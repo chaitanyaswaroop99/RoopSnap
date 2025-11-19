@@ -1,0 +1,22 @@
+# Netlify Configuration for RoopSnap
+# This file tells Netlify how to build and serve your site
+
+[build]
+  # No build command needed - static site
+  publish = "."
+
+[[redirects]]
+  # Redirect all API calls to your backend
+  from = "/api/*"
+  to = "https://YOUR-BACKEND-URL.railway.app/api/:splat"
+  status = 200
+  force = true
+
+# Custom headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+
