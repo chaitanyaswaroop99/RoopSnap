@@ -6,6 +6,9 @@ const path = require('path');
 const fs = require('fs');
 const bodyParser = require('body-parser');
 const https = require('https');
+const bcrypt = require('bcrypt');
+const nodemailer = require('nodemailer');
+const session = require('express-session');
 
 // Load environment variables from .env file if dotenv is installed (for local development)
 try {
@@ -18,12 +21,41 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_API_KEY = process.env.ADMIN_API_KEY || 'roopsnap';
 
+// Session configuration
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'roopsnap-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+}));
+
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: true,
+    credentials: true
+}));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname)); // Serve static files from root folder
 app.use('/uploads', express.static('uploads')); // Serve uploaded images
+
+// Email transporter configuration
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: process.env.SMTP_PORT || 587,
+    secure: false,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    }
+});
+
+// Store reset codes (in production, use Redis or database)
+const resetCodes = new Map();
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -80,6 +112,16 @@ pool.connect((err, client, release) => {
 // Initialize database tables
 async function initializeDatabase() {
     try {
+        // Users table (for admin authentication)
+        await pool.query(`CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP
+        )`);
+        console.log('Users table ready.');
+
         // Photos table
         await pool.query(`CREATE TABLE IF NOT EXISTS photos (
             id SERIAL PRIMARY KEY,
@@ -103,18 +145,46 @@ async function initializeDatabase() {
             status VARCHAR(50) DEFAULT 'new'
         )`);
         console.log('Contacts table ready.');
+
+        // Create default admin user if none exists
+        const userCheck = await pool.query('SELECT COUNT(*) FROM users');
+        if (parseInt(userCheck.rows[0].count) === 0) {
+            const defaultEmail = process.env.ADMIN_EMAIL || 'admin@roopsnap.com';
+            const defaultPassword = process.env.ADMIN_PASSWORD || 'admin123';
+            const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+            await pool.query(
+                'INSERT INTO users (email, password_hash) VALUES ($1, $2)',
+                [defaultEmail, hashedPassword]
+            );
+            console.log(`Default admin user created: ${defaultEmail} / ${defaultPassword}`);
+            console.log('⚠️  Please change the default password after first login!');
+        }
     } catch (err) {
         console.error('Error initializing database:', err.message);
     }
 }
 
-// Admin authentication middleware
+// Admin authentication middleware (session-based)
 function authenticateAdmin(req, res, next) {
-    const headerKey = req.headers['x-admin-key'];
-    if (!headerKey || headerKey !== ADMIN_API_KEY) {
-        return res.status(401).json({ error: 'Unauthorized' });
+    if (req.session && req.session.userId) {
+        return next();
     }
-    next();
+    
+    // Fallback to API key for backward compatibility
+    const headerKey = req.headers['x-admin-key'];
+    if (headerKey && headerKey === ADMIN_API_KEY) {
+        return next();
+    }
+    
+    return res.status(401).json({ error: 'Unauthorized - Please login' });
+}
+
+// Check if user is authenticated (for frontend)
+function isAuthenticated(req, res, next) {
+    if (req.session && req.session.userId) {
+        return next();
+    }
+    return res.status(401).json({ error: 'Not authenticated' });
 }
 
 // API Routes
@@ -283,7 +353,207 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', message: 'Server is running' });
 });
 
-// Admin key verification
+// Authentication Routes
+
+// Register admin user
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        // Check if user already exists
+        const existingUser = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+        if (existingUser.rows.length > 0) {
+            return res.status(400).json({ error: 'User with this email already exists' });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Create user
+        const result = await pool.query(
+            'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email',
+            [email, hashedPassword]
+        );
+
+        res.json({
+            message: 'Admin user created successfully',
+            user: result.rows[0]
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        // Find user
+        const result = await pool.query('SELECT id, email, password_hash FROM users WHERE email = $1', [email]);
+        
+        if (result.rows.length === 0) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        const user = result.rows[0];
+
+        // Verify password
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        if (!isValid) {
+            return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        // Update last login
+        await pool.query('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1', [user.id]);
+
+        // Create session
+        req.session.userId = user.id;
+        req.session.userEmail = user.email;
+
+        res.json({
+            message: 'Login successful',
+            user: {
+                id: user.id,
+                email: user.email
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Logout
+app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy((err) => {
+        if (err) {
+            return res.status(500).json({ error: 'Failed to logout' });
+        }
+        res.json({ message: 'Logout successful' });
+    });
+});
+
+// Check authentication status
+app.get('/api/auth/check', isAuthenticated, (req, res) => {
+    res.json({
+        authenticated: true,
+        user: {
+            id: req.session.userId,
+            email: req.session.userEmail
+        }
+    });
+});
+
+// Forgot password - Send reset code
+app.post('/api/auth/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        // Check if user exists
+        const result = await pool.query('SELECT id, email FROM users WHERE email = $1', [email]);
+        
+        if (result.rows.length === 0) {
+            // Don't reveal if email exists for security
+            return res.json({ message: 'If the email exists, a reset code has been sent' });
+        }
+
+        // Generate 6-digit code
+        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Store code (expires in 15 minutes)
+        resetCodes.set(email, {
+            code: resetCode,
+            expires: Date.now() + 15 * 60 * 1000
+        });
+
+        // Send email
+        if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+            try {
+                await transporter.sendMail({
+                    from: process.env.SMTP_USER,
+                    to: email,
+                    subject: 'RoopSnap - Password Reset Code',
+                    html: `
+                        <h2>Password Reset Request</h2>
+                        <p>Your password reset code is:</p>
+                        <h1 style="color: #d4af37; font-size: 32px; letter-spacing: 5px;">${resetCode}</h1>
+                        <p>This code will expire in 15 minutes.</p>
+                        <p>If you didn't request this, please ignore this email.</p>
+                    `
+                });
+            } catch (emailError) {
+                console.error('Email error:', emailError);
+                // Still return success for security
+            }
+        } else {
+            // Development mode - log code to console
+            console.log(`\n⚠️  Password reset code for ${email}: ${resetCode}\n`);
+        }
+
+        res.json({ message: 'If the email exists, a reset code has been sent' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Reset password with code
+app.post('/api/auth/reset-password', async (req, res) => {
+    try {
+        const { email, code, newPassword } = req.body;
+
+        if (!email || !code || !newPassword) {
+            return res.status(400).json({ error: 'Email, code, and new password are required' });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
+        }
+
+        // Verify code
+        const storedData = resetCodes.get(email);
+        if (!storedData) {
+            return res.status(400).json({ error: 'Invalid or expired reset code' });
+        }
+
+        if (storedData.code !== code) {
+            return res.status(400).json({ error: 'Invalid reset code' });
+        }
+
+        if (Date.now() > storedData.expires) {
+            resetCodes.delete(email);
+            return res.status(400).json({ error: 'Reset code has expired' });
+        }
+
+        // Update password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        await pool.query('UPDATE users SET password_hash = $1 WHERE email = $2', [hashedPassword, email]);
+
+        // Delete used code
+        resetCodes.delete(email);
+
+        res.json({ message: 'Password reset successful' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Admin key verification (backward compatibility)
 app.get('/api/admin/verify', authenticateAdmin, (req, res) => {
     res.json({ status: 'OK' });
 });

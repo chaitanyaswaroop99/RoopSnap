@@ -216,21 +216,64 @@
 <body>
     <div class="admin-auth-overlay" id="adminAuthOverlay">
         <div class="admin-auth-modal">
-            <h2>Admin Access</h2>
-            <p>Enter your admin access key to continue.</p>
-            <form id="adminAuthForm">
-                <input type="password" id="adminKeyInput" placeholder="Access Key" required>
-                <button type="submit">Unlock</button>
-                <p class="admin-auth-error" id="adminAuthError"></p>
-            </form>
+            <!-- Login Form -->
+            <div id="loginFormContainer">
+                <h2>Admin Login</h2>
+                <p>Enter your email and password to continue.</p>
+                <form id="adminAuthForm">
+                    <input type="email" id="emailInput" placeholder="Email" required>
+                    <input type="password" id="passwordInput" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                    <p class="admin-auth-error" id="adminAuthError"></p>
+                    <p style="margin-top: 1rem; text-align: center;">
+                        <a href="#" id="forgotPasswordLink" style="color: var(--accent-color); text-decoration: none;">Forgot Password?</a>
+                    </p>
+                </form>
+            </div>
+
+            <!-- Forgot Password Form -->
+            <div id="forgotPasswordContainer" style="display: none;">
+                <h2>Reset Password</h2>
+                <p>Enter your email to receive a reset code.</p>
+                <form id="forgotPasswordForm">
+                    <input type="email" id="forgotEmailInput" placeholder="Email" required>
+                    <button type="submit">Send Reset Code</button>
+                    <p class="admin-auth-error" id="forgotPasswordError"></p>
+                    <p style="margin-top: 1rem; text-align: center;">
+                        <a href="#" id="backToLoginLink" style="color: var(--accent-color); text-decoration: none;">Back to Login</a>
+                    </p>
+                </form>
+            </div>
+
+            <!-- Reset Password Form -->
+            <div id="resetPasswordContainer" style="display: none;">
+                <h2>Enter Reset Code</h2>
+                <p>Check your email for the reset code.</p>
+                <form id="resetPasswordForm">
+                    <input type="email" id="resetEmailInput" placeholder="Email" required readonly>
+                    <input type="text" id="resetCodeInput" placeholder="6-digit code" maxlength="6" required>
+                    <input type="password" id="newPasswordInput" placeholder="New Password" required>
+                    <input type="password" id="confirmPasswordInput" placeholder="Confirm Password" required>
+                    <button type="submit">Reset Password</button>
+                    <p class="admin-auth-error" id="resetPasswordError"></p>
+                    <p style="margin-top: 1rem; text-align: center;">
+                        <a href="#" id="backToForgotLink" style="color: var(--accent-color); text-decoration: none;">Back</a>
+                    </p>
+                </form>
+            </div>
         </div>
     </div>
     <div class="admin-container hidden" id="adminContent">
         <a href="index.html" class="back-link">← Back to Website</a>
         
         <div class="admin-header">
-            <h1 class="section-title">Admin Panel</h1>
-            <p>Manage your photos and view client inquiries</p>
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div>
+                    <h1 class="section-title">Admin Panel</h1>
+                    <p>Manage your photos and view client inquiries</p>
+                </div>
+                <button id="logoutBtn" class="submit-button" style="background: #dc3545; margin: 0;">Logout</button>
+            </div>
         </div>
 
         <!-- Photo Upload Section -->
@@ -281,19 +324,47 @@
 
     <script>
         const API_BASE_URL = window.location.origin;
-        let adminKey = '';
 
         const adminAuthOverlay = document.getElementById('adminAuthOverlay');
         const adminAuthForm = document.getElementById('adminAuthForm');
         const adminAuthError = document.getElementById('adminAuthError');
-        const adminKeyInput = document.getElementById('adminKeyInput');
         const adminContent = document.getElementById('adminContent');
+        
+        // Form containers
+        const loginFormContainer = document.getElementById('loginFormContainer');
+        const forgotPasswordContainer = document.getElementById('forgotPasswordContainer');
+        const resetPasswordContainer = document.getElementById('resetPasswordContainer');
+        
+        // Links
+        const forgotPasswordLink = document.getElementById('forgotPasswordLink');
+        const backToLoginLink = document.getElementById('backToLoginLink');
+        const backToForgotLink = document.getElementById('backToForgotLink');
 
-        function showAuthOverlay(message = '') {
+        // Check authentication on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/check`, {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    hideAuthOverlay();
+                    loadPhotos();
+                    loadContacts();
+                } else {
+                    showLoginForm();
+                }
+            } catch (error) {
+                showLoginForm();
+            }
+        }
+
+        function showLoginForm() {
             adminAuthOverlay.style.display = 'flex';
             adminContent.classList.add('hidden');
-            adminAuthError.textContent = message;
-            adminKeyInput.focus();
+            loginFormContainer.style.display = 'block';
+            forgotPasswordContainer.style.display = 'none';
+            resetPasswordContainer.style.display = 'none';
+            adminAuthError.textContent = '';
         }
 
         function hideAuthOverlay() {
@@ -304,43 +375,139 @@
 
         function handleUnauthorizedResponse(response) {
             if (response.status === 401) {
-                adminKey = '';
-                showAuthOverlay('Session expired. Please enter your admin key again.');
+                showLoginForm();
                 throw new Error('Unauthorized');
             }
         }
 
-        async function verifyAdminKey() {
-            if (!adminKey) {
-                showAuthOverlay('Enter your admin key to continue.');
-                return false;
-            }
+        // Login
+        adminAuthForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value;
+
+            adminAuthError.textContent = '';
+
             try {
-                const response = await fetch(`${API_BASE_URL}/api/admin/verify`, {
-                    headers: {
-                        'x-admin-key': adminKey
-                    }
+                const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email, password })
                 });
+
+                const data = await response.json();
+
                 if (!response.ok) {
-                    throw new Error('Invalid admin key');
+                    adminAuthError.textContent = data.error || 'Login failed';
+                    return;
                 }
+
                 hideAuthOverlay();
                 loadPhotos();
                 loadContacts();
-                return true;
+                adminAuthForm.reset();
             } catch (error) {
-                adminKey = '';
-                showAuthOverlay('Invalid admin key. Please try again.');
-                return false;
+                adminAuthError.textContent = 'Login failed. Please try again.';
             }
-        }
-
-        adminAuthForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            adminKey = adminKeyInput.value.trim();
-            await verifyAdminKey();
-            adminAuthForm.reset();
         });
+
+        // Forgot Password
+        forgotPasswordLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            loginFormContainer.style.display = 'none';
+            forgotPasswordContainer.style.display = 'block';
+        });
+
+        backToLoginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            forgotPasswordContainer.style.display = 'none';
+            loginFormContainer.style.display = 'block';
+        });
+
+        document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('forgotEmailInput').value.trim();
+            const errorEl = document.getElementById('forgotPasswordError');
+            errorEl.textContent = '';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorEl.textContent = data.error || 'Failed to send reset code';
+                    return;
+                }
+
+                // Show reset password form
+                document.getElementById('resetEmailInput').value = email;
+                forgotPasswordContainer.style.display = 'none';
+                resetPasswordContainer.style.display = 'block';
+                errorEl.textContent = '';
+            } catch (error) {
+                errorEl.textContent = 'Failed to send reset code. Please try again.';
+            }
+        });
+
+        // Reset Password
+        backToForgotLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            resetPasswordContainer.style.display = 'none';
+            forgotPasswordContainer.style.display = 'block';
+        });
+
+        document.getElementById('resetPasswordForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('resetEmailInput').value.trim();
+            const code = document.getElementById('resetCodeInput').value.trim();
+            const newPassword = document.getElementById('newPasswordInput').value;
+            const confirmPassword = document.getElementById('confirmPasswordInput').value;
+            const errorEl = document.getElementById('resetPasswordError');
+            errorEl.textContent = '';
+
+            if (newPassword !== confirmPassword) {
+                errorEl.textContent = 'Passwords do not match';
+                return;
+            }
+
+            if (newPassword.length < 6) {
+                errorEl.textContent = 'Password must be at least 6 characters';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, code, newPassword })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    errorEl.textContent = data.error || 'Failed to reset password';
+                    return;
+                }
+
+                // Success - show login form
+                errorEl.textContent = '';
+                resetPasswordContainer.style.display = 'none';
+                loginFormContainer.style.display = 'block';
+                adminAuthError.textContent = 'Password reset successful! Please login.';
+                document.getElementById('resetPasswordForm').reset();
+            } catch (error) {
+                errorEl.textContent = 'Failed to reset password. Please try again.';
+            }
+        });
+
+        // Check auth on load
+        checkAuth();
 
         // File preview
         document.getElementById('photoInput').addEventListener('change', function(e) {
@@ -381,9 +548,7 @@
             try {
                 const response = await fetch(`${API_BASE_URL}/api/photos/upload`, {
                     method: 'POST',
-                    headers: {
-                        'x-admin-key': adminKey
-                    },
+                    credentials: 'include',
                     body: formData
                 });
 
@@ -443,9 +608,7 @@
             try {
                 const response = await fetch(`${API_BASE_URL}/api/photos/${id}`, {
                     method: 'DELETE',
-                    headers: {
-                        'x-admin-key': adminKey
-                    }
+                    credentials: 'include'
                 });
 
                 if (response.ok) {
@@ -466,9 +629,7 @@
             const contactsList = document.getElementById('contactsList');
             try {
                 const response = await fetch(`${API_BASE_URL}/api/contacts`, {
-                    headers: {
-                        'x-admin-key': adminKey
-                    }
+                    credentials: 'include'
                 });
                 handleUnauthorizedResponse(response);
                 if (!response.ok) throw new Error('Failed to fetch contacts');
@@ -500,9 +661,18 @@
             }
         }
 
-        // Initialize on load
-        document.addEventListener('DOMContentLoaded', () => {
-            showAuthOverlay();
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                await fetch(`${API_BASE_URL}/api/auth/logout`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                showLoginForm();
+            } catch (error) {
+                console.error('Logout error:', error);
+                showLoginForm();
+            }
         });
     </script>
 </body>
